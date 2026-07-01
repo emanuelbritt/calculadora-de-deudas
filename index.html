@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculadora de Deudas</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1c3f6e;--navy-lt:#2f5a94;--navy-faint:#e8eef6;
+  --paper:#f6f4ef;--line:#ddd9d0;--ink:#2a2a28;
+  --muted:#7a756e;--accent:#c97b3c;--danger:#b53a2a;
+  --good:#2f7a5a;--paid:#e6f4ed;--tab-h:44px;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
+.topbar{background:var(--navy);color:#fff;padding:.9rem 1.2rem .75rem;display:flex;align-items:center;justify-content:space-between}
+.topbar-text h1{font-size:1rem;font-weight:700}
+.topbar-text p{font-size:.72rem;opacity:.7;margin-top:.15rem}
+.sync-dot{display:flex;align-items:center;gap:.4rem;font-size:.7rem;color:rgba(255,255,255,.7);flex-shrink:0}
+.sync-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:#4caf50;flex-shrink:0;transition:background .3s}
+.sync-dot.syncing::before{background:#f0a500;animation:pulse .8s infinite alternate}
+.sync-dot.syncing::after{content:'Guardando...'}
+.sync-dot.ok::before{background:#4caf50}
+.sync-dot.ok::after{content:'En línea ✓'}
+.sync-dot.error::before{background:#e53935}
+.sync-dot.error::after{content:'Sin conexión'}
+.sync-dot::after{content:'Conectando...'}
+@keyframes pulse{from{opacity:1}to{opacity:.3}}
+
+/* LOADING OVERLAY */
+.loading-overlay{position:fixed;inset:0;background:var(--navy);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;z-index:999;transition:opacity .4s}
+.loading-overlay.hidden{opacity:0;pointer-events:none}
+.loading-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-overlay p{color:#fff;font-size:.9rem;opacity:.8}
+
+.tab-bar{display:flex;align-items:flex-end;overflow-x:auto;background:var(--navy);padding:0 .6rem;gap:.25rem;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tab-bar::-webkit-scrollbar{display:none}
+.tab{display:flex;align-items:center;gap:.4rem;height:var(--tab-h);padding:0 .9rem;background:rgba(255,255,255,.1);color:rgba(255,255,255,.65);border-radius:8px 8px 0 0;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap;border:none;transition:background .15s,color .15s;flex-shrink:0}
+.tab:hover{background:rgba(255,255,255,.18);color:#fff}
+.tab.active{background:var(--paper);color:var(--navy)}
+.tab .del-btn{display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:transparent;border:none;color:inherit;cursor:pointer;font-size:.7rem;opacity:.5;padding:0;line-height:1}
+.tab .del-btn:hover{background:rgba(255,0,0,.2);opacity:1}
+.add-tab-btn{height:var(--tab-h);padding:0 .9rem;background:transparent;border:none;color:rgba(255,255,255,.6);font-size:1.3rem;cursor:pointer;border-radius:8px 8px 0 0;flex-shrink:0;line-height:1}
+.add-tab-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+
+.panel{display:none;max-width:520px;margin:0 auto}
+.panel.active{display:block}
+.sub-bar{display:flex;border-bottom:2px solid var(--line);background:#fff;position:sticky;top:0;z-index:10}
+.sub-btn{flex:1;padding:.6rem .5rem;border:none;background:transparent;font-size:.82rem;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.sub-btn:hover{color:var(--navy)}
+.sub-btn.active{color:var(--navy);border-bottom-color:var(--accent)}
+.sub-section{display:none;padding:1rem 1rem 2rem}
+.sub-section.active{display:block}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:.9rem;box-shadow:0 2px 10px rgba(28,63,110,.06)}
+.card-head{background:var(--navy-faint);border-bottom:1px solid var(--line);padding:.55rem .9rem;font-size:.7rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.05em}
+.card-body{padding:.85rem .9rem 1rem}
+
+.name-field{display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;border-bottom:1px solid var(--line)}
+.name-field label{font-size:.75rem;color:var(--muted);font-weight:600;white-space:nowrap}
+.name-field input{flex:1;border:none;background:transparent;font-size:.88rem;font-weight:700;color:var(--navy);padding:.1rem .2rem}
+.name-field input:focus{outline:none;border-bottom:2px solid var(--navy-lt)}
+.desc-display{padding:.5rem .9rem .6rem;border-bottom:1px solid var(--line);font-size:.78rem;color:var(--muted);font-style:italic;min-height:2rem}
+.desc-display span{color:var(--ink);font-style:normal;font-weight:500}
+
+.tasa-row{display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;flex-wrap:wrap}
+.tasa-row label{font-size:.8rem;font-weight:700;color:var(--navy);white-space:nowrap}
+.tasa-row input{width:80px;padding:.22rem .4rem;border:1.5px solid var(--line);border-radius:6px;font-size:.88rem;font-weight:700;color:var(--accent);font-family:'Courier New',monospace;text-align:right;background:var(--paper)}
+.tasa-row input:focus{outline:2px solid var(--navy-lt);border-color:transparent}
+.tasa-row .hint{font-size:.7rem;color:var(--muted)}
+
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.55rem .9rem;border-bottom:1px solid var(--line);gap:.6rem}
+.toggle-row:last-child{border-bottom:none}
+.toggle-left{display:flex;flex-direction:column;gap:.1rem}
+.toggle-label{font-size:.82rem;font-weight:600;color:var(--navy)}
+.toggle-sub{font-size:.7rem;color:var(--muted)}
+.pill{position:relative;width:40px;height:22px;flex-shrink:0}
+.pill input{opacity:0;width:0;height:0;position:absolute}
+.pill-track{position:absolute;inset:0;background:var(--line);border-radius:99px;cursor:pointer;transition:background .2s}
+.pill input:checked+.pill-track{background:var(--navy-lt)}
+.pill-track::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.pill input:checked+.pill-track::after{transform:translateX(18px)}
+.extra-amount{display:flex;align-items:center;gap:.25rem;padding:.4rem .9rem .55rem 2.5rem;background:var(--navy-faint);border-bottom:1px solid var(--line)}
+.extra-amount.hidden{display:none}
+.extra-amount label{font-size:.75rem;color:var(--navy);font-weight:600;white-space:nowrap}
+.extra-amount .pfx{font-size:.82rem;color:var(--accent);font-weight:700}
+.extra-amount input{width:110px;padding:.22rem .4rem;border:1.5px solid var(--line);border-radius:6px;font-size:.88rem;font-weight:700;color:var(--accent);font-family:'Courier New',monospace;text-align:right;background:#fff}
+.extra-amount input:focus{outline:2px solid var(--navy-lt);border-color:transparent}
+.extra-amount .hint{font-size:.68rem;color:var(--muted)}
+
+.summary-grid{display:grid;grid-template-columns:1fr auto;gap:0}
+.sum-row{display:contents}
+.sum-row>span:first-child{font-size:.82rem;color:var(--muted);padding:.3rem 0;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.sum-row>span:last-child{font-family:'Courier New',monospace;font-size:.9rem;font-weight:700;text-align:right;padding:.3rem 0;border-bottom:1px solid var(--line)}
+.sum-row.big>span:first-child{font-size:.88rem;font-weight:700;color:var(--navy);border-bottom:none;padding-top:.5rem}
+.sum-row.big>span:last-child{font-size:1.05rem;color:var(--navy);border-bottom:none;padding-top:.5rem}
+.sum-row.cuota>span:last-child{color:var(--accent)}
+.sum-row.interes>span:last-child{color:var(--danger)}
+.sum-row.capital>span:last-child{color:var(--good)}
+
+.progress-banner{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:.9rem;box-shadow:0 2px 10px rgba(28,63,110,.06)}
+.progress-inner{padding:.75rem .9rem .8rem}
+.progress-label{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.45rem}
+.progress-label .pl-left{font-size:.78rem;font-weight:700;color:var(--navy)}
+.progress-label .pl-pct{font-size:.82rem;font-weight:700;color:var(--good)}
+.progress-bar-bg{height:9px;background:var(--line);border-radius:99px;overflow:hidden}
+.progress-bar-fill{height:100%;background:var(--good);border-radius:99px;transition:width .35s}
+.progress-amounts{display:flex;justify-content:space-between;align-items:center;margin-top:.4rem;font-size:.72rem;color:var(--muted);gap:.3rem}
+.pa-paid{color:var(--good);font-weight:700;font-family:'Courier New',monospace}
+.pa-total{font-family:'Courier New',monospace;font-weight:600}
+.pa-sep{opacity:.4}
+.progress-pending{text-align:center;margin-top:.4rem;padding:.3rem .6rem;background:rgba(181,58,42,.07);border-radius:8px;font-size:.8rem;color:var(--danger);font-weight:700}
+.progress-pending span{font-family:'Courier New',monospace}
+.progress-done{text-align:center;margin-top:.4rem;padding:.3rem .6rem;background:rgba(47,122,90,.1);border-radius:8px;font-size:.8rem;color:var(--good);font-weight:700}
+
+.table-wrap{border-radius:10px;border:1px solid var(--line);overflow:hidden}
+.plan-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.plan-mes-header td{background:var(--navy);color:#fff;font-weight:700;font-size:.75rem;padding:.45rem .75rem;letter-spacing:.02em}
+.plan-mes-header td:last-child{text-align:right;font-family:'Courier New',monospace}
+.plan-item-row td{padding:.32rem .75rem .32rem 1.2rem;border-bottom:1px solid var(--line);font-size:.76rem}
+.plan-item-row td:first-child{color:var(--ink)}
+.plan-item-row td:last-child{text-align:right;font-family:'Courier New',monospace}
+.plan-item-int{font-size:.67rem;color:var(--danger)}
+.plan-total-row td{padding:.38rem .75rem;font-weight:700;font-size:.8rem;border-bottom:3px solid var(--line);background:var(--navy-faint)}
+.plan-total-row td:last-child{text-align:right;font-family:'Courier New',monospace;color:var(--navy)}
+.plan-extras-row td{padding:.28rem .75rem .28rem 1.2rem;border-bottom:1px solid var(--line);font-size:.73rem;color:var(--muted)}
+.plan-extras-row td:last-child{text-align:right;font-family:'Courier New',monospace}
+.plan-mes-paid .plan-mes-header td{background:var(--good)}
+.plan-mes-paid .plan-item-row td,.plan-mes-paid .plan-total-row td,.plan-mes-paid .plan-extras-row td{background:var(--paid)}
+.plan-mes-paid .plan-total-row td:last-child{color:var(--good)}
+.paid-cb{width:17px;height:17px;accent-color:var(--good);cursor:pointer;vertical-align:middle}
+
+.purchase-card{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:.65rem;overflow:hidden;box-shadow:0 1px 5px rgba(28,63,110,.05)}
+.purchase-header{display:flex;align-items:center;justify-content:space-between;padding:.48rem .75rem;background:var(--navy-faint);border-bottom:1px solid var(--line);gap:.5rem}
+.purchase-header input[type="text"]{flex:1;border:none;background:transparent;font-size:.82rem;font-weight:700;color:var(--navy);padding:0;min-width:0}
+.purchase-header input[type="text"]:focus{outline:none;border-bottom:1.5px solid var(--navy-lt)}
+.purchase-del{background:none;border:none;color:var(--danger);cursor:pointer;font-size:1rem;padding:0 .2rem;opacity:.5;flex-shrink:0}
+.purchase-del:hover{opacity:1}
+.purchase-body{padding:.55rem .75rem .6rem;display:grid;grid-template-columns:1fr 1fr;gap:.4rem .65rem}
+.pf{display:flex;flex-direction:column;gap:.18rem}
+.pf label{font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.pf-row{display:flex;align-items:center;gap:.18rem}
+.pf-row .pfx{font-size:.8rem;color:var(--accent);font-weight:700}
+.pf input[type="number"]{width:100%;padding:.27rem .38rem;border:1.5px solid var(--line);border-radius:6px;font-size:.84rem;font-weight:700;color:var(--ink);font-family:'Courier New',monospace;background:var(--paper)}
+.pf input[type="number"]:focus{outline:2px solid var(--navy-lt);border-color:transparent}
+.int-toggle{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding-top:.38rem;border-top:1px dashed var(--line);margin-top:.05rem;gap:.5rem}
+.int-toggle .it-label{font-size:.77rem;font-weight:700;color:var(--navy)}
+.int-toggle .it-sub{font-size:.66rem;color:var(--muted)}
+.p-preview{grid-column:1/-1;font-size:.7rem;color:var(--muted);padding-top:.05rem}
+.p-preview strong{color:var(--accent)}
+.p-preview strong.free{color:var(--good)}
+.add-purchase-btn{width:100%;padding:.62rem;border:2px dashed var(--line);border-radius:10px;background:transparent;color:var(--navy-lt);font-size:.82rem;font-weight:700;cursor:pointer;margin-bottom:.5rem;transition:background .15s,border-color .15s}
+.add-purchase-btn:hover{background:var(--navy-faint);border-color:var(--navy-lt)}
+.note{font-size:.68rem;color:var(--muted);line-height:1.5}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <p>Cargando datos...</p>
+</div>
+
+<div class="topbar">
+  <div class="topbar-text">
+    <h1>Calculadora de Deudas</h1>
+    <p>Tarjetas de Crédito &amp; Otros Préstamos</p>
+  </div>
+  <div class="sync-dot" id="syncDot" title="Estado de sincronización"></div>
+</div>
+
+<div class="tab-bar" id="tabBar">
+  <button class="add-tab-btn" id="addTabBtn">＋</button>
+</div>
+<div id="panels"></div>
+
+<!-- FIREBASE -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDHU1a6V6AHCw9EeParBxByv-dAbsrBnlU",
+  authDomain: "calculadora-de-deudas.firebaseapp.com",
+  projectId: "calculadora-de-deudas",
+  storageBucket: "calculadora-de-deudas.firebasestorage.app",
+  messagingSenderId: "203149229168",
+  appId: "1:203149229168:web:aa99da0180370bc907c8b5"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+/* ── UTILS ── */
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+function cop(n){return '$'+Math.round(n).toLocaleString('es-CO')}
+function pct(n){return n.toFixed(4)+'%'}
+function monthlyRate(ea){return Math.pow(1+ea/100,1/12)-1}
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function setSyncDot(state){
+  const dot=document.getElementById('syncDot');
+  dot.className='sync-dot '+state;
+}
+
+/* ── AMORTIZACIÓN ── */
+function amortizePurchase(monto,cuotas,ea,conInteres){
+  if(!conInteres){
+    const cf=monto/cuotas;
+    return Array.from({length:cuotas},(_,i)=>({cuotaActual:cf,interes:0,capital:cf,saldo:Math.max(0,monto-cf*(i+1))}));
+  }
+  const im=monthlyRate(ea);
+  const cuota=im===0?monto/cuotas:monto*(im*Math.pow(1+im,cuotas))/(Math.pow(1+im,cuotas)-1);
+  let saldo=monto,rows=[];
+  for(let i=0;i<cuotas;i++){
+    const interes=saldo*im;
+    const capital=i===cuotas-1?saldo:cuota-interes;
+    saldo=i===cuotas-1?0:saldo-capital;
+    rows.push({cuotaActual:capital+interes,interes,capital,saldo:Math.max(0,saldo)});
+  }
+  return rows;
+}
+
+function consolidate(d){
+  if(!d.purchases.length)return{maxMes:0,plans:[],monthTotals:[]};
+  const maxMes=Math.max(...d.purchases.map(p=>p.cuotas));
+  const plans=d.purchases.map(p=>amortizePurchase(p.monto,p.cuotas,d.ea,p.conInteres));
+  const extras=(d.tieneCuotaManejo?d.cuotaManejo:0)+(d.tieneSeguro?d.seguro:0);
+  const monthTotals=[];
+  for(let m=0;m<maxMes;m++){
+    let total=0,interes=0;
+    d.purchases.forEach((p,i)=>{if(m<p.cuotas){total+=plans[i][m].cuotaActual;interes+=plans[i][m].interes;}});
+    monthTotals.push({total,interes,extras,totalConExtras:total+extras});
+  }
+  return{maxMes,plans,monthTotals};
+}
+
+/* ── DATA ── */
+let debts=[],activeId=null;
+
+function createDebt(name){
+  return{id:uid(),name:name||'Nueva tarjeta',ea:28.14,
+    tieneCuotaManejo:false,cuotaManejo:0,tieneSeguro:false,seguro:0,
+    purchases:[],paidMonths:{}};
+}
+function createPurchase(desc,monto,cuotas,conInteres){
+  return{id:uid(),desc:desc||'Compra',monto:monto||100000,cuotas:cuotas||1,conInteres:!!conInteres};
+}
+
+/* ── FIREBASE SAVE / LOAD ── */
+let _savingLocally=false;
+
+async function saveDebt(d){
+  setSyncDot('syncing');
+  _savingLocally=true;
+  try{
+    await setDoc(doc(db,'deudas',d.id),JSON.parse(JSON.stringify(d)));
+    setSyncDot('ok');
+    setTimeout(()=>setSyncDot(''),3000);
+  }catch(e){console.error(e);setSyncDot('error');}
+  finally{setTimeout(()=>{_savingLocally=false;},300);}
+}
+
+async function deleteDebt(id){
+  setSyncDot('syncing');
+  try{
+    await deleteDoc(doc(db,'deudas',id));
+    setSyncDot('ok');
+    setTimeout(()=>setSyncDot(''),3000);
+  }catch(e){console.error(e);setSyncDot('error');}
+}
+
+/* ── REALTIME LISTENER ── */
+function startSync(){
+  const colRef=collection(db,'deudas');
+  onSnapshot(colRef,
+    snapshot=>{
+      snapshot.docChanges().forEach(change=>{
+        const data=change.doc.data();
+        if(change.type==='added'||change.type==='modified'){
+          const idx=debts.findIndex(d=>d.id===data.id);
+          if(idx>=0) debts[idx]=data;
+          else debts.push(data);
+        }
+        if(change.type==='removed'){
+          debts=debts.filter(d=>d.id!==change.doc.id);
+        }
+      });
+      // skip UI rebuild if this snapshot was triggered by our own save
+      if(_savingLocally) return;
+      // si no hay datos en Firebase, mostrar tarjeta demo
+      if(!debts.length){
+        const demo=createDebt('BBVA Aqua Gold');
+        demo.ea=28.14;
+        debts.push(demo);
+        saveDebt(demo);
+      }
+      if(!activeId&&debts.length) activeId=debts[0].id;
+      // remember active sub-tabs before rebuild
+      const activeSubs={};
+      debts.forEach(d=>{
+        const panel=document.getElementById('panel-'+d.id);
+        const activeSubBtn=panel?.querySelector('.sub-btn.active');
+        if(activeSubBtn) activeSubs[d.id]=activeSubBtn.dataset.sub;
+      });
+      renderTabs();
+      // rebuild preserving sub-tabs
+      const container=document.getElementById('panels');
+      container.innerHTML='';
+      debts.forEach(d=>{
+        const sub=activeSubs[d.id]||'resumen';
+        container.appendChild(buildPanel(d,sub));
+        attachListeners(d);
+        updateProgress(d);
+      });
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    },
+    error=>{
+      console.error('Firebase error:',error);
+      // mostrar error en pantalla
+      const overlay=document.getElementById('loadingOverlay');
+      overlay.innerHTML=`
+        <div style="text-align:center;padding:2rem;color:#fff;max-width:300px">
+          <div style="font-size:2rem;margin-bottom:1rem">⚠️</div>
+          <div style="font-weight:700;margin-bottom:.5rem">Error de conexión</div>
+          <div style="font-size:.82rem;opacity:.8;margin-bottom:1.5rem">${error.message}</div>
+          <button onclick="location.reload()" style="background:#fff;color:#1c3f6e;border:none;padding:.6rem 1.2rem;border-radius:8px;font-weight:700;cursor:pointer">Reintentar</button>
+        </div>`;
+    }
+  );
+}
+
+/* ── RENDER TABS ── */
+function renderTabs(){
+  const bar=document.getElementById('tabBar'),addBtn=document.getElementById('addTabBtn');
+  bar.querySelectorAll('.tab').forEach(t=>t.remove());
+  debts.forEach(d=>{
+    const btn=document.createElement('button');
+    btn.className='tab'+(d.id===activeId?' active':'');
+    const sp=document.createElement('span');sp.textContent=d.name||'Tarjeta';btn.appendChild(sp);
+    if(debts.length>1){
+      const del=document.createElement('button');del.className='del-btn';del.innerHTML='✕';
+      del.onclick=e=>{e.stopPropagation();removeDebt(d.id)};btn.appendChild(del);
+    }
+    btn.addEventListener('click',()=>switchTab(d.id));
+    bar.insertBefore(btn,addBtn);
+  });
+}
+
+function switchTab(id){
+  activeId=id;renderTabs();
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  const t=document.getElementById('panel-'+id);if(t)t.classList.add('active');
+}
+
+function removeDebt(id){
+  const idx=debts.findIndex(d=>d.id===id);
+  debts=debts.filter(d=>d.id!==id);
+  if(activeId===id)activeId=debts[Math.max(0,idx-1)]?.id||debts[0]?.id;
+  deleteDebt(id);
+  renderTabs();rebuildAll();
+}
+
+/* ── PROGRESS ── */
+function updateProgress(d){
+  const inner=document.getElementById('progress-inner-'+d.id);
+  if(!inner)return;
+  const{maxMes,monthTotals}=consolidate(d);
+  if(!maxMes){inner.innerHTML='';return;}
+  const totalPagar=monthTotals.reduce((s,m)=>s+m.totalConExtras,0);
+  let pagado=0;
+  for(let m=0;m<maxMes;m++){
+    if(d.paidMonths&&d.paidMonths[String(m)])pagado+=monthTotals[m].totalConExtras;
+  }
+  const pendiente=totalPagar-pagado;
+  const p=totalPagar>0?Math.round(pagado/totalPagar*100):0;
+  const done=p>=100;
+  inner.innerHTML=`
+    <div class="progress-label">
+      <span class="pl-left">${done?'🎉 ¡Pagado!':'Pagado hasta ahora'}</span>
+      <span class="pl-pct">${p}%</span>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${p}%"></div></div>
+    <div class="progress-amounts">
+      <span><span class="pa-paid">${cop(pagado)}</span> pagado</span>
+      <span class="pa-sep">·</span>
+      <span>total <span class="pa-total">${cop(totalPagar)}</span></span>
+    </div>
+    ${done
+      ?`<div class="progress-done">✅ ¡Deuda saldada!</div>`
+      :`<div class="progress-pending">Aún debes <span>${cop(pendiente)}</span></div>`}`;
+}
+
+/* ── BUILD PLAN ROWS ── */
+function buildPlanRows(d,plans,monthTotals,maxMes){
+  const extras=(d.tieneCuotaManejo?d.cuotaManejo:0)+(d.tieneSeguro?d.seguro:0);
+  let html='';
+  for(let m=0;m<maxMes;m++){
+    const mt=monthTotals[m];
+    const paid=!!(d.paidMonths&&d.paidMonths[String(m)]);
+    const activeItems=d.purchases.map((p,i)=>({p,r:plans[i][m],active:m<p.cuotas})).filter(x=>x.active);
+    const itemRows=activeItems.map(({p,r})=>`
+      <tr class="plan-item-row">
+        <td>${escH(p.desc)}</td>
+        <td>${cop(r.cuotaActual)}${r.interes>0?`<br><span class="plan-item-int">int: ${cop(r.interes)}</span>`:''}</td>
+      </tr>`).join('');
+    const extrasRow=extras>0?`<tr class="plan-extras-row"><td>Cuota manejo / seguro</td><td>${cop(extras)}</td></tr>`:'';
+    html+=`<tbody class="${paid?'plan-mes-paid':''}">
+      <tr class="plan-mes-header">
+        <td>Mes ${m+1}</td>
+        <td><input type="checkbox" class="paid-cb" data-debt="${d.id}" data-mi="${m}" ${paid?'checked':''}></td>
+      </tr>
+      ${itemRows}${extrasRow}
+      <tr class="plan-total-row"><td>Total mes ${m+1}</td><td>${cop(mt.totalConExtras)}</td></tr>
+    </tbody>`;
+  }
+  return html;
+}
+
+/* ── BUILD PANEL ── */
+function buildPanel(d,activeSub){
+  activeSub=activeSub||'resumen';
+  const im=monthlyRate(d.ea);
+  const{maxMes,plans,monthTotals}=consolidate(d);
+  const autoDesc=d.purchases.map(p=>p.desc).filter(Boolean).join(', ');
+  const totalCapital=d.purchases.reduce((s,p)=>s+p.monto,0);
+  const totalInteres=monthTotals.reduce((s,m)=>s+m.interes,0);
+  const totalExtrasAll=monthTotals.reduce((s,m)=>s+m.extras,0);
+  const totalPagar=totalCapital+totalInteres+totalExtrasAll;
+
+  const resumenHtml=`
+    <div class="card">
+      <div class="name-field">
+        <label>Tarjeta</label>
+        <input type="text" value="${escH(d.name)}" placeholder="Ej: BBVA Aqua Gold" data-debt="${d.id}" data-field="name">
+      </div>
+      ${autoDesc
+        ?`<div class="desc-display">Compras: <span>${escH(autoDesc)}</span></div>`
+        :`<div class="desc-display">Agrega compras en la pestaña <strong>🛒 Compras</strong></div>`}
+      <div class="tasa-row">
+        <label>Tasa E.A.</label>
+        <input type="number" value="${d.ea}" min="0.01" max="80" step="0.01" data-debt="${d.id}" data-field="ea" inputmode="decimal">
+        <span style="font-size:.75rem;color:var(--muted)">%</span>
+        <span class="hint">· mensual: <strong>${pct(im*100)}</strong></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">Cobros adicionales mensuales</div>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <span class="toggle-label">Cuota de manejo</span>
+          <span class="toggle-sub">${d.tieneCuotaManejo?cop(d.cuotaManejo)+' / mes':'No aplica'}</span>
+        </div>
+        <label class="pill"><input type="checkbox" data-debt="${d.id}" data-field="tieneCuotaManejo" ${d.tieneCuotaManejo?'checked':''}><span class="pill-track"></span></label>
+      </div>
+      <div class="extra-amount${d.tieneCuotaManejo?'':' hidden'}">
+        <label>Valor mensual</label><span class="pfx">$</span>
+        <input type="number" value="${d.cuotaManejo}" min="0" step="100" data-debt="${d.id}" data-field="cuotaManejo" inputmode="numeric">
+        <span class="hint">sin IVA</span>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <span class="toggle-label">Seguro</span>
+          <span class="toggle-sub">${d.tieneSeguro?cop(d.seguro)+' / mes':'No tiene'}</span>
+        </div>
+        <label class="pill"><input type="checkbox" data-debt="${d.id}" data-field="tieneSeguro" ${d.tieneSeguro?'checked':''}><span class="pill-track"></span></label>
+      </div>
+      <div class="extra-amount${d.tieneSeguro?'':' hidden'}">
+        <label>Valor mensual</label><span class="pfx">$</span>
+        <input type="number" value="${d.seguro}" min="0" step="100" data-debt="${d.id}" data-field="seguro" inputmode="numeric">
+        <span class="hint">ver extracto</span>
+      </div>
+    </div>
+    ${maxMes>0?`
+    <div class="card">
+      <div class="card-head">Resumen total</div>
+      <div class="card-body">
+        <div class="summary-grid">
+          ${d.purchases.map(p=>`<div class="sum-row capital"><span>${escH(p.desc)} (${p.cuotas} cuota${p.cuotas>1?'s':''})</span><span>${cop(p.monto)}</span></div>`).join('')}
+          <div class="sum-row cuota" style="border-top:1px solid var(--line);margin-top:.15rem"><span><strong>Capital total</strong></span><span>${cop(totalCapital)}</span></div>
+          <div class="sum-row interes"><span>Total intereses</span><span>${cop(totalInteres)}</span></div>
+          ${totalExtrasAll>0?`<div class="sum-row interes"><span>Cobros adicionales (${maxMes} m)</span><span>${cop(totalExtrasAll)}</span></div>`:''}
+          <div class="sum-row big"><span>Total a pagar</span><span>${cop(totalPagar)}</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="progress-banner" id="progress-banner-${d.id}">
+      <div class="card-head">Progreso de pago</div>
+      <div class="progress-inner" id="progress-inner-${d.id}"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">Plan de pagos mes a mes</div>
+      <div class="table-wrap">
+        <table class="plan-table">${buildPlanRows(d,plans,monthTotals,maxMes)}</table>
+      </div>
+      <p class="note" style="padding:.5rem .9rem">Marca ✓ los meses ya pagados.</p>
+    </div>`:''}`;
+
+  const purchaseCards=d.purchases.map(p=>{
+    const rows=amortizePurchase(p.monto,p.cuotas,d.ea,p.conInteres);
+    const cuotaPreview=rows[0]?.cuotaActual||0;
+    return`<div class="purchase-card">
+      <div class="purchase-header">
+        <input type="text" value="${escH(p.desc)}" placeholder="Nombre de la compra" data-debt="${d.id}" data-pid="${p.id}" data-pf="desc">
+        <button class="purchase-del" data-debt="${d.id}" data-pid="${p.id}">✕</button>
+      </div>
+      <div class="purchase-body">
+        <div class="pf"><label>Monto</label>
+          <div class="pf-row"><span class="pfx">$</span><input type="number" value="${p.monto}" min="1000" step="1000" data-debt="${d.id}" data-pid="${p.id}" data-pf="monto" inputmode="numeric"></div>
+        </div>
+        <div class="pf"><label>Cuotas</label>
+          <div class="pf-row"><input type="number" value="${p.cuotas}" min="1" max="60" step="1" style="width:68px" data-debt="${d.id}" data-pid="${p.id}" data-pf="cuotas" inputmode="numeric"><span style="font-size:.71rem;color:var(--muted);margin-left:.22rem">meses</span></div>
+        </div>
+        <div class="int-toggle">
+          <div><div class="it-label">¿Cobra interés?</div>
+          <div class="it-sub">${p.conInteres?'Sí · sistema francés':'No · cuotas iguales'}</div></div>
+          <label class="pill"><input type="checkbox" data-debt="${d.id}" data-pid="${p.id}" data-pf="conInteres" ${p.conInteres?'checked':''}><span class="pill-track"></span></label>
+        </div>
+        <div class="p-preview">Cuota mes 1: <strong class="${p.conInteres?'':'free'}">${cop(cuotaPreview)}</strong> ${p.conInteres?'c/interés':'sin interés'} · ${p.cuotas} ${p.cuotas===1?'pago':'pagos'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const comprasHtml=`
+    <div id="purchase-list-${d.id}">${purchaseCards}</div>
+    <button class="add-purchase-btn" data-debt="${d.id}" data-action="addpurchase">＋ Agregar compra</button>
+    <p class="note">Los cambios se guardan automáticamente y se sincronizan en todos tus dispositivos.</p>`;
+
+  const panel=document.createElement('div');
+  panel.className='panel'+(d.id===activeId?' active':'');
+  panel.id='panel-'+d.id;
+  panel.innerHTML=`
+    <div class="sub-bar">
+      <button class="sub-btn${activeSub==='resumen'?' active':''}" data-sub="resumen">📊 Resumen</button>
+      <button class="sub-btn${activeSub==='compras'?' active':''}" data-sub="compras">🛒 Compras (${d.purchases.length})</button>
+    </div>
+    <div class="sub-section${activeSub==='resumen'?' active':''}" data-sub="resumen">${resumenHtml}</div>
+    <div class="sub-section${activeSub==='compras'?' active':''}" data-sub="compras">${comprasHtml}</div>`;
+  return panel;
+}
+
+/* ── REBUILD ── */
+function rebuildAll(){
+  const container=document.getElementById('panels');
+  container.innerHTML='';
+  debts.forEach(d=>{container.appendChild(buildPanel(d));attachListeners(d);updateProgress(d);});
+}
+
+function rebuildDebt(d,keepSub){
+  const old=document.getElementById('panel-'+d.id);
+  const wasActive=old?.classList.contains('active');
+  const activeSub=keepSub||old?.querySelector('.sub-btn.active')?.dataset.sub||'resumen';
+  const newPanel=buildPanel(d,activeSub);
+  if(wasActive)newPanel.classList.add('active');
+  if(old)old.replaceWith(newPanel);
+  else document.getElementById('panels').appendChild(newPanel);
+  attachListeners(d);
+  updateProgress(d);
+  saveDebt(d);
+}
+
+/* ── LISTENERS ── */
+function attachListeners(d){
+  const panel=document.getElementById('panel-'+d.id);
+  if(!panel)return;
+
+  panel.querySelectorAll('.sub-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      const sub=e.currentTarget.dataset.sub;
+      panel.querySelectorAll('.sub-btn').forEach(b=>b.classList.toggle('active',b.dataset.sub===sub));
+      panel.querySelectorAll('.sub-section').forEach(s=>s.classList.toggle('active',s.dataset.sub===sub));
+    });
+  });
+
+  panel.querySelectorAll('.paid-cb').forEach(el=>{
+    el.addEventListener('change',e=>{
+      e.stopPropagation();
+      if(!d.paidMonths)d.paidMonths={};
+      const key=String(e.target.dataset.mi);
+      d.paidMonths[key]=e.target.checked;
+      const tbody=e.target.closest('tbody');
+      if(tbody)tbody.className=e.target.checked?'plan-mes-paid':'';
+      updateProgress(d);
+      saveDebt(d);
+    });
+  });
+
+  panel.querySelectorAll('input[type="checkbox"][data-field]').forEach(el=>{
+    el.addEventListener('change',e=>{d[e.target.dataset.field]=e.target.checked;rebuildDebt(d);});
+  });
+
+  panel.querySelectorAll('input[type="checkbox"][data-pf="conInteres"]').forEach(el=>{
+    el.addEventListener('change',e=>{
+      const p=d.purchases.find(x=>x.id===e.target.dataset.pid);
+      if(p){p.conInteres=e.target.checked;rebuildDebt(d,'compras');}
+    });
+  });
+
+  panel.querySelectorAll('input[type="text"][data-field="name"]').forEach(el=>{
+    el.addEventListener('change',e=>{d.name=e.target.value||'Tarjeta';renderTabs();saveDebt(d);});
+  });
+
+  panel.querySelectorAll('input[type="text"][data-pf="desc"]').forEach(el=>{
+    el.addEventListener('change',e=>{
+      const p=d.purchases.find(x=>x.id===e.target.dataset.pid);
+      if(p){p.desc=e.target.value||'Compra';rebuildDebt(d,'compras');}
+    });
+  });
+
+  panel.querySelectorAll('input[type="number"][data-field]').forEach(el=>{
+    el.addEventListener('change',e=>{
+      const field=e.target.dataset.field;
+      let val=parseFloat(e.target.value);if(isNaN(val))return;
+      if(field==='ea')val=Math.max(0.01,Math.min(80,val));
+      if(field==='cuotaManejo'||field==='seguro')val=Math.max(0,val);
+      d[field]=val;e.target.value=field==='ea'?val.toFixed(2):val;
+      rebuildDebt(d);
+    });
+  });
+
+  panel.querySelectorAll('input[type="number"][data-pf]').forEach(el=>{
+    el.addEventListener('change',e=>{
+      const p=d.purchases.find(x=>x.id===e.target.dataset.pid);if(!p)return;
+      const pf=e.target.dataset.pf;
+      let val=parseFloat(e.target.value);if(isNaN(val))return;
+      if(pf==='monto')val=Math.max(1000,val);
+      if(pf==='cuotas')val=Math.max(1,Math.min(60,Math.round(val)));
+      p[pf]=val;e.target.value=val;
+      rebuildDebt(d,'compras');
+    });
+  });
+
+  panel.querySelectorAll('[data-action="addpurchase"]').forEach(el=>{
+    el.addEventListener('click',e=>{
+      const debt=debts.find(x=>x.id===e.target.dataset.debt);if(!debt)return;
+      debt.purchases.push(createPurchase('Compra '+(debt.purchases.length+1),100000,1,false));
+      rebuildDebt(debt,'compras');
+      setTimeout(()=>{
+        const inputs=document.querySelectorAll(`#purchase-list-${debt.id} input[type="text"]`);
+        const last=inputs[inputs.length-1];if(last){last.focus();last.select();}
+      },40);
+    });
+  });
+
+  panel.querySelectorAll('.purchase-del').forEach(el=>{
+    el.addEventListener('click',e=>{
+      const debt=debts.find(x=>x.id===e.target.dataset.debt);
+      const pid=e.target.dataset.pid;
+      if(debt){debt.purchases=debt.purchases.filter(p=>p.id!==pid);rebuildDebt(debt,'compras');}
+    });
+  });
+}
+
+/* ── ADD DEBT ── */
+document.getElementById('addTabBtn').addEventListener('click',()=>{
+  const d=createDebt('Nueva tarjeta');debts.push(d);activeId=d.id;
+  saveDebt(d);renderTabs();rebuildAll();
+  setTimeout(()=>{const inp=document.querySelector(`#panel-${d.id} input[data-field="name"]`);if(inp){inp.focus();inp.select();}},40);
+});
+
+/* ── START ── */
+startSync();
+</script>
+</body>
+</html>
