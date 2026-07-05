@@ -185,6 +185,48 @@ input:focus,button:focus{outline:2px solid var(--org-lt);outline-offset:1px}
 .loading-overlay p{color:#fff;font-size:.9rem;opacity:.85;font-weight:600}
 
 .note{font-size:.67rem;color:var(--muted);line-height:1.5}
+
+/* ══════════════════════════════════════════
+   DARK MODE
+══════════════════════════════════════════ */
+@media(prefers-color-scheme:dark){
+  :root{
+    --paper:  #1C1209;
+    --bg:     #140D05;
+    --line:   #3A2810;
+    --ink:    #F5E6D0;
+    --muted:  #A08060;
+    --paid:   #0D2618;
+  }
+  body{background:var(--bg)}
+  .card{background:#221508;border-color:var(--line)}
+  .card-head{background:#2A1C0A;border-color:var(--line)}
+  .name-field input{color:#F5C060}
+  .desc-display{background:#1C1209}
+  .tasa-row input{background:#2A1C0A;border-color:var(--line);color:#F5C060}
+  .toggle-label{color:var(--ink)}
+  .extra-amount{background:#2A1C0A}
+  .extra-amount input{background:#1C1209;border-color:var(--line);color:#F5C060}
+  .summary-grid .sum-row>span:first-child{color:var(--muted)}
+  .progress-banner{background:#221508;border-color:var(--line)}
+  .prog-bar-bg{background:#3A2810}
+  .table-wrap{border-color:var(--line)}
+  .plan-item-row td{border-color:var(--line)}
+  .plan-total-row td{background:#2A1C0A}
+  .plan-mes-paid .plan-item-row td,.plan-mes-paid .plan-total-row td,.plan-mes-paid .plan-extras-row td{background:#0D2618}
+  .sub-bar{background:#1C1209;border-color:var(--line)}
+  .sub-btn{color:var(--muted)}
+  .sub-btn.active{color:#F5C060;border-bottom-color:var(--yel)}
+  .sub-section{background:var(--bg)}
+  .purchase-card{background:#221508;border-color:var(--line)}
+  .purchase-header{background:#2A1C0A;border-color:var(--line)}
+  .purchase-header input[type="text"]{color:#F5C060}
+  .pf input[type="number"]{background:#2A1C0A;border-color:var(--line);color:var(--ink)}
+  .add-purchase-btn{border-color:var(--line);color:#F5C060}
+  .add-purchase-btn:hover{background:#2A1C0A}
+  .prog-pending{background:rgba(181,58,42,.15)}
+  .prog-done{background:rgba(30,122,78,.15)}
+}
 </style>
 </head>
 <body>
