@@ -149,6 +149,19 @@ input:focus,button:focus{outline:2px solid var(--org-lt);outline-offset:1px}
 .plan-total-row td:last-child{text-align:right;font-family:'Courier New',monospace;color:var(--org-dk)}
 .plan-extras-row td{padding:.26rem .75rem .26rem 1.2rem;border-bottom:1px solid var(--line);font-size:.71rem;color:var(--muted)}
 .plan-extras-row td:last-child{text-align:right;font-family:'Courier New',monospace}
+.plan-abono-row td{padding:.28rem .75rem .28rem 1.2rem;border-bottom:1px solid var(--line);font-size:.72rem;color:var(--good);font-weight:700;background:#F0FAF4}
+.plan-abono-row td:last-child{text-align:right;font-family:'Courier New',monospace}
+.abono-input-row td{padding:.32rem .75rem .32rem 1.2rem;border-bottom:1px solid var(--line);background:#F0FAF4}
+.abono-input-wrap{display:flex;align-items:center;gap:.3rem}
+.abono-input-wrap label{font-size:.68rem;color:var(--good);font-weight:700;white-space:nowrap}
+.abono-input-wrap .pfx{font-size:.75rem;color:var(--good);font-weight:800}
+.abono-input-wrap input{width:110px;padding:.2rem .35rem;border:1.5px solid #A8D8B8;border-radius:6px;font-size:.82rem;font-weight:700;color:var(--good);font-family:'Courier New',monospace;text-align:right;background:#fff}
+.abono-input-wrap input:focus{outline:2px solid var(--good);border-color:transparent}
+.plan-mes-paid .abono-input-row td,.plan-mes-paid .plan-abono-row td{background:var(--paid)}
+@media(prefers-color-scheme:dark){
+  .plan-abono-row td,.abono-input-row td{background:#0D2618}
+  .abono-input-wrap input{background:#0A1E12;border-color:#1E5530;color:#4DE89A}
+}
 .plan-mes-paid .plan-mes-header td{background:linear-gradient(90deg,var(--good),#2E9E62)}
 .plan-mes-paid .plan-item-row td,.plan-mes-paid .plan-total-row td,.plan-mes-paid .plan-extras-row td{background:var(--paid)}
 .plan-mes-paid .plan-total-row td:last-child{color:var(--good)}
@@ -290,16 +303,85 @@ function amortizePurchase(monto,cuotas,ea,conInteres){
 }
 function consolidate(d){
   if(!d.purchases||!d.purchases.length)return{maxMes:0,plans:[],monthTotals:[]};
-  const maxMes=Math.max(...d.purchases.map(p=>p.cuotas));
-  const plans=d.purchases.map(p=>amortizePurchase(p.monto,p.cuotas,d.ea,p.conInteres));
+  const im=monthlyRate(d.ea);
   const extras=(d.tieneCuotaManejo?d.cuotaManejo:0)+(d.tieneSeguro?d.seguro:0);
+  const abonos=d.abonos||{};
+
+  // Simulate month by month with extra payments
+  // Each purchase tracks remaining saldo independently
+  const numP=d.purchases.length;
+  let saldos=d.purchases.map(p=>p.monto);
+  let done=d.purchases.map(()=>false);
+
   const monthTotals=[];
-  for(let m=0;m<maxMes;m++){
-    let total=0,interes=0;
-    d.purchases.forEach((p,i)=>{if(m<p.cuotas){total+=plans[i][m].cuotaActual;interes+=plans[i][m].interes;}});
-    monthTotals.push({total,interes,extras,totalConExtras:total+extras});
+  const plans=d.purchases.map(()=>[]); // rows per purchase per month
+
+  let mes=0;
+  const MAX_MES=120; // safety cap
+
+  while(mes<MAX_MES){
+    // Check if all purchases are done
+    const anyActive=saldos.some((s,i)=>!done[i]&&s>0.5);
+    if(!anyActive) break;
+
+    let totalMes=0, interesMes=0;
+    const abonoExtra=parseFloat(abonos[String(mes)])||0;
+
+    // Calculate normal cuota for each active purchase this month
+    let excedente=abonoExtra;
+
+    d.purchases.forEach((p,i)=>{
+      if(done[i]||saldos[i]<0.5){
+        plans[i].push(null); // not active
+        done[i]=true;
+        return;
+      }
+      const saldo=saldos[i];
+      let cuota,interes,capital;
+
+      if(!p.conInteres){
+        // sin interés: cuota fija original, pero si saldo < cuota pagar lo que queda
+        const cuotaOrig=p.monto/p.cuotas;
+        cuota=Math.min(cuotaOrig,saldo);
+        interes=0;
+        capital=cuota;
+      } else {
+        interes=saldo*im;
+        // recalculate remaining cuotas from this saldo
+        const remaining=Math.max(1,Math.round(saldo/(p.monto/p.cuotas)));
+        cuota=im===0?saldo/remaining:saldo*(im*Math.pow(1+im,remaining))/(Math.pow(1+im,remaining)-1);
+        cuota=Math.min(cuota,saldo+interes);
+        capital=cuota-interes;
+      }
+
+      saldos[i]=Math.max(0,saldo-capital);
+      if(saldos[i]<0.5){saldos[i]=0;done[i]=true;}
+
+      totalMes+=cuota;
+      interesMes+=interes;
+      plans[i].push({cuotaActual:cuota,interes,capital,saldo:saldos[i]});
+    });
+
+    // Apply excedente proportionally to remaining saldos
+    if(excedente>0){
+      const totalSaldo=saldos.reduce((s,v)=>s+v,0);
+      if(totalSaldo>0){
+        d.purchases.forEach((_,i)=>{
+          if(!done[i]&&saldos[i]>0){
+            const proporcion=saldos[i]/totalSaldo;
+            const abono=Math.min(excedente*proporcion,saldos[i]);
+            saldos[i]=Math.max(0,saldos[i]-abono);
+            if(saldos[i]<0.5){saldos[i]=0;done[i]=true;}
+          }
+        });
+      }
+    }
+
+    monthTotals.push({total:totalMes,interes:interesMes,extras,totalConExtras:totalMes+extras,abonoExtra});
+    mes++;
   }
-  return{maxMes,plans,monthTotals};
+
+  return{maxMes:mes,plans,monthTotals};
 }
 
 /* ══════════════════════════════════════════
@@ -334,7 +416,7 @@ let guardar=()=>{ estado.updatedAt=Date.now(); guardarLocal(); };
 function createDebt(name){
   return{id:uid(),name:name||'Nueva tarjeta',ea:28.14,
     tieneCuotaManejo:false,cuotaManejo:0,tieneSeguro:false,seguro:0,
-    purchases:[],paidMonths:{}};
+    purchases:[],paidMonths:{},abonos:{}};
 }
 function createPurchase(desc,monto,cuotas,conInteres){
   return{id:uid(),desc:desc||'Compra',monto:monto||100000,cuotas:cuotas||1,conInteres:!!conInteres};
@@ -379,7 +461,12 @@ function updateProgress(d){
   if(!maxMes){inner.innerHTML='';return;}
   const totalPagar=monthTotals.reduce((s,m)=>s+m.totalConExtras,0);
   let pagado=0;
-  for(let m=0;m<maxMes;m++){if(d.paidMonths&&d.paidMonths[String(m)])pagado+=monthTotals[m].totalConExtras;}
+  for(let m=0;m<maxMes;m++){
+    if(d.paidMonths&&d.paidMonths[String(m)]){
+      pagado+=monthTotals[m].totalConExtras;
+      pagado+=monthTotals[m].abonoExtra||0;
+    }
+  }
   const pendiente=totalPagar-pagado;
   const p=totalPagar>0?Math.round(pagado/totalPagar*100):0;
   const done=p>=100;
@@ -397,17 +484,28 @@ function updateProgress(d){
 /* ── plan rows ── */
 function buildPlanRows(d,plans,monthTotals,maxMes){
   const extras=(d.tieneCuotaManejo?d.cuotaManejo:0)+(d.tieneSeguro?d.seguro:0);
+  const abonos=d.abonos||{};
   let html='';
   for(let m=0;m<maxMes;m++){
     const mt=monthTotals[m];
     const paid=!!(d.paidMonths&&d.paidMonths[String(m)]);
-    const activeItems=d.purchases.map((p,i)=>({p,r:plans[i][m],active:m<p.cuotas})).filter(x=>x.active);
+    const abonoVal=parseFloat(abonos[String(m)])||0;
+    const activeItems=d.purchases.map((p,i)=>({p,r:plans[i][m],active:plans[i][m]!==null})).filter(x=>x.active);
     const itemRows=activeItems.map(({p,r})=>`<tr class="plan-item-row"><td>${escH(p.desc)}</td><td>${cop(r.cuotaActual)}${r.interes>0?`<br><span class="plan-item-int">int: ${cop(r.interes)}</span>`:''}</td></tr>`).join('');
     const extrasRow=extras>0?`<tr class="plan-extras-row"><td>Cuota manejo / seguro</td><td>${cop(extras)}</td></tr>`:'';
+    const abonoRow=abonoVal>0?`<tr class="plan-abono-row"><td>💚 Abono extra aplicado</td><td>+ ${cop(abonoVal)}</td></tr>`:'';
     html+=`<tbody class="${paid?'plan-mes-paid':''}">
       <tr class="plan-mes-header"><td>Mes ${m+1}</td><td><input type="checkbox" class="paid-cb" data-debt="${d.id}" data-mi="${m}" ${paid?'checked':''}></td></tr>
       ${itemRows}${extrasRow}
       <tr class="plan-total-row"><td>Total mes ${m+1}</td><td>${cop(mt.totalConExtras)}</td></tr>
+      ${abonoRow}
+      <tr class="abono-input-row"><td colspan="2">
+        <div class="abono-input-wrap">
+          <label>Abono extra:</label>
+          <span class="pfx">$</span>
+          <input type="number" min="0" step="1000" value="${abonoVal||''}" placeholder="0" class="abono-input" data-debt="${d.id}" data-mi="${m}" inputmode="numeric">
+        </div>
+      </td></tr>
     </tbody>`;
   }
   return html;
@@ -568,6 +666,17 @@ function attachListeners(d){
       const tbody=e.target.closest('tbody');
       if(tbody)tbody.className=e.target.checked?'plan-mes-paid':'';
       updateProgress(d);guardar();
+    });
+  });
+
+  panel.querySelectorAll('.abono-input').forEach(el=>{
+    el.addEventListener('change',e=>{
+      if(!d.abonos)d.abonos={};
+      const key=String(e.target.dataset.mi);
+      const val=parseFloat(e.target.value)||0;
+      if(val>0) d.abonos[key]=val;
+      else delete d.abonos[key];
+      guardar();rebuildDebt(d,'resumen');
     });
   });
 
